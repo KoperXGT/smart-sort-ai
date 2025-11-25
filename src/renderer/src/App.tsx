@@ -1,18 +1,56 @@
-function App() {
+import { useState, useEffect } from 'react';
+import { Sidebar } from './components/Sidebar';
+import { Header } from './components/Header';
+import { Dropzone } from './components/Dropzone';
+import { AnalysisPanel } from './components/AnalysisPanel';
+import { SettingsModal } from './components/SettingsModal';
+
+function App(): JSX.Element {
+  // --- Stan Globalny Aplikacji ---
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [apiKey, setApiKey] = useState('');
+  const [file, setFile] = useState<File | null>(null);
+
+  useEffect(() => {
+    const loadSettings = async () => {
+      // Używamy nowej metody getSettings
+      const settings = await window.api.getSettings();
+      if (settings?.apiKey) {
+        setApiKey(settings.apiKey);
+      }
+    };
+    loadSettings();
+  }, []);
+
+  const handleSaveKey = async () => {
+    // Używamy nowej metody saveSettings (scala z istniejącymi, więc nie usunie rootDir)
+    await window.api.saveSettings({ apiKey });
+    setIsSettingsOpen(false);
+  };
+
   return (
-    <div className="h-screen w-full bg-gray-900 text-white flex flex-col items-center justify-center p-10">
-      <h1 className="text-4xl font-bold mb-8 text-blue-400">SmartSort AI</h1>
+    <div className="h-screen w-full bg-gray-950 text-white flex flex-col font-sans overflow-hidden">
       
-      <div className="w-full max-w-lg h-64 border-4 border-dashed border-gray-600 rounded-xl flex items-center justify-center hover:border-blue-500 hover:bg-gray-800 transition-all cursor-pointer">
-        <div className="text-center">
-          <p className="text-xl text-gray-300">Przeciągnij pliki tutaj</p>
-          <p className="text-sm text-gray-500 mt-2">lub kliknij, aby wybrać</p>
+      <Header onOpenSettings={() => setIsSettingsOpen(true)} />
+
+      <div className="flex flex-1 overflow-hidden">
+        
+        <Sidebar />
+
+        <div className="flex-1 flex flex-col min-w-0">
+          {/* Przekazujemy stan w dół do komponentów */}
+          <Dropzone file={file} setFile={setFile} />
+          <AnalysisPanel file={file} />
         </div>
       </div>
 
-      <button className="mt-8 px-6 py-3 bg-blue-600 rounded-lg font-semibold hover:bg-blue-500 transition-colors">
-        Rozpocznij Sortowanie
-      </button>
+      <SettingsModal 
+        isOpen={isSettingsOpen} 
+        onClose={() => setIsSettingsOpen(false)}
+        apiKey={apiKey}
+        setApiKey={setApiKey}
+        onSave={handleSaveKey}
+      />
     </div>
   );
 }

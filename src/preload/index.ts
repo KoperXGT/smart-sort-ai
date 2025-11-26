@@ -12,6 +12,7 @@ const api = {
   // Pliki
   selectDirectory: () => ipcRenderer.invoke('select-directory'),
   readDir: (path: string) => ipcRenderer.invoke('read-dir', path),
+  analyzeFiles: (paths: string[]) => ipcRenderer.invoke('analyze-files', paths),
   
   // Watcher
   startWatching: (path: string) => ipcRenderer.invoke('start-watching', path),
@@ -21,7 +22,23 @@ const api = {
     return () => {
       ipcRenderer.removeListener('dir-changed', subscription);
     };
-  }
+  },
+  onSyncEvent: (callback: (type: 'missing' | 'new', path: string) => void) => {
+    // Nasłuchujemy dwóch różnych zdarzeń z Main i mapujemy je na jeden callback
+    const missingListener = (_e: any, path: string) => callback('missing', path);
+    const newFileListener = (_e: any, path: string) => callback('new', path);
+
+    ipcRenderer.on('file-missing', missingListener);
+    ipcRenderer.on('new-file-detected', newFileListener);
+
+    // Funkcja czyszcząca (usuwa oba nasłuchiwacze)
+    return () => {
+      ipcRenderer.removeListener('file-missing', missingListener);
+      ipcRenderer.removeListener('new-file-detected', newFileListener);
+    };
+  },
+  selectDocuments: () => ipcRenderer.invoke('select-documents'),
+  processPaths: (paths: string[]) => ipcRenderer.invoke('process-paths', paths)
 }
 
 if (process.contextIsolated) {

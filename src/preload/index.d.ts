@@ -8,9 +8,13 @@ declare global {
       getSettings: () => Promise<{ apiKey?: string; rootDir?: string } | null>;
       saveSettings: (settings: { apiKey?: string; rootDir?: string }) => Promise<boolean>;
       selectDirectory: () => Promise<string | null>;
-      readDir: (path: string) => Promise<any>; // Uproszczony typ any dla drzewa
+      readDir: (path: string) => Promise<any>;
       startWatching: (path: string) => Promise<boolean>;
-      onDirChange: (callback: () => void) => () => void; // Zwraca funkcję void
+      onDirChange: (callback: () => void) => () => void;
+      onSyncEvent: (callback: (type: 'missing' | 'new', path: string) => void) => () => void;
+      selectDocuments: () => Promise<string[]>;
+      processPaths: (paths: string[]) => Promise<string[]>;
+      analyzeFiles: (paths: string[]) => Promise<any[]>;
     }
   }
 }

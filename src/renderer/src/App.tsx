@@ -4,12 +4,14 @@ import { Header } from './components/Header';
 import { Dropzone } from './components/Dropzone';
 import { AnalysisPanel } from './components/AnalysisPanel';
 import { SettingsModal } from './components/SettingsModal';
+import { Toaster, Toast } from './components/Toaster';
 
 function App(): JSX.Element {
   // --- Stan Globalny Aplikacji ---
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [apiKey, setApiKey] = useState('');
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<string[]>([]);
+  const [toasts, setToasts] = useState<Toast[]>([]);
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -28,6 +30,31 @@ function App(): JSX.Element {
     setIsSettingsOpen(false);
   };
 
+  const addToast = (type: Toast['type'], title: string, message: string) => {
+    const id = Date.now();
+    setToasts(prev => [...prev, { id, type, title, message }]);
+
+    // Auto-usuwanie po 5 sekundach
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 5000);
+  };
+
+  // Efekt nasłuchujący zdarzeń z backendu (Watcher)
+  useEffect(() => {
+    const removeListener = window.api.onSyncEvent((type, path) => {
+      const fileName = path.split(/[/\\]/).pop();
+
+      if (type === 'new') {
+        addToast('new', 'Wykryto nowy plik', `Dodano do indeksu: ${fileName}`);
+      } else if (type === 'missing') {
+        addToast('missing', 'Plik usunięty', `Usunięto z indeksu: ${fileName}`);
+      }
+    });
+
+    return () => removeListener();
+  }, []);
+
   return (
     <div className="h-screen w-full bg-gray-950 text-white flex flex-col font-sans overflow-hidden">
       
@@ -39,10 +66,16 @@ function App(): JSX.Element {
 
         <div className="flex-1 flex flex-col min-w-0">
           {/* Przekazujemy stan w dół do komponentów */}
-          <Dropzone file={file} setFile={setFile} />
-          <AnalysisPanel file={file} />
+          <Dropzone
+            files={files} 
+            setFiles={setFiles} 
+            onAnalyze={() => console.log('Tu będzie start analizy')}
+          />
+          <AnalysisPanel files={files} />
         </div>
       </div>
+
+      <Toaster toasts={toasts} removeToast={(id) => setToasts(prev => prev.filter(t => t.id !== id))} />
 
       <SettingsModal 
         isOpen={isSettingsOpen} 

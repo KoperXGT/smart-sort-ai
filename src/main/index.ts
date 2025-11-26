@@ -1,17 +1,23 @@
 import { app, shell, BrowserWindow, ipcMain, dialog, safeStorage } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import { MetadataManager } from './metadataManager';
+import { parseFileContent } from './fileParser';
 import icon from '../../resources/icon.png?asset'
 import fs from 'fs'
 import path from 'path'
 import chokidar from 'chokidar'
+import OpenAI from 'openai';
 
 // --- ZMIENNE GLOBALNE ---
+const metadataManager = new MetadataManager();
 let fileWatcher: chokidar.FSWatcher | null = null;
 const configPath = path.join(app.getPath('userData'), 'config.json');
 
+// --- KONFIGURACJA LIMITÓW ---
+const CONCURRENCY_LIMIT = 5;
+
 // --- FUNKCJE POMOCNICZE (DRZEWO PLIKÓW) ---
-// (Ta część jest identyczna jak w poprzedniej działającej wersji)
 const getFileTree = (dirPath: string) => {
   try {
     const stats = fs.statSync(dirPath);
@@ -66,16 +72,97 @@ function createWindow(): void {
   }
 }
 
+// --- FUNKCJA AI (NOWY, UNIWERSALNY PROMPT) ---
+async function analyzeContentWithAI(text: string, apiKey: string) {
+  if (!text || text.trim().length < 10) return null;
+
+  const openai = new OpenAI({ apiKey });
+  const currentYear = new Date().getFullYear();
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: `Jesteś Ekspertem Archiwizacji. Twoim zadaniem jest kategoryzacja plików.
+
+          ZASADY KATEGORYZACJI:
+          1. Separator folderów to "/". Przykład: "Praca/Projekty".
+          2. Kategorie mają być ogólne (np. Finanse, Dom, Praca, Edukacja, Hobby, Dokumenty).
+
+          ZASADY NAZEWNICTWA (BARDZO WAŻNE):
+          1. Sugerowana nazwa (suggestedName) ma zawierać TYLKO nazwę pliku, BEZ ROZSZERZENIA.
+             Źle: "Faktura.pdf"
+             Dobrze: "Faktura_Za_Paliwo"
+          2. Jeśli plik jest "ponadczasowy" (np. kod, e-book, instrukcja) -> NIE dodawaj daty na początku.
+          3. Jeśli plik jest dokumentem historycznym (faktura, pismo) -> dodaj datę "RRRR-MM-DD_Temat".
+
+          Zwróć JSON:
+          {
+            "summary": "Krótkie info",
+            "category": "Kategoria/Podkategoria",
+            "suggestedName": "Sama_Nazwa_Bez_Rozszerzenia",
+            "metadata": { "type": "string", "tags": [], "attributes": {} }
+          }`
+        },
+        {
+          role: "user",
+          content: `Rok: ${currentYear}. Treść:\n\n${text}`
+        }
+      ],
+      response_format: { type: "json_object" }
+    });
+
+    const content = completion.choices[0].message.content;
+    return content ? JSON.parse(content) : null;
+
+  } catch (error) {
+    console.error("OpenAI Error:", error);
+    return null;
+  }
+}
+
+// --- POMOCNIK: PROCESOWANIE RÓWNOLEGŁE (Concurrency Pool) ---
+async function processWithConcurrency<T>(
+  items: string[], 
+  concurrency: number, 
+  task: (item: string) => Promise<T>
+): Promise<T[]> {
+  const results: T[] = [];
+  const queue = [...items];
+  
+  const worker = async () => {
+    while (queue.length > 0) {
+      const item = queue.shift();
+      if (item) {
+        try {
+          const result = await task(item);
+          results.push(result);
+        } catch (e) {
+          console.error("Critical worker error", e);
+        }
+      }
+    }
+  };
+
+  const workers = Array(Math.min(items.length, concurrency))
+    .fill(null)
+    .map(() => worker());
+
+  await Promise.all(workers);
+  
+  return results;
+}
+
 // --- LOGIKA SZYFROWANIA ---
-// Pomocnicze funkcje, żeby nie zaśmiecać handlerów
 function encryptApiKey(plainKey: string): string {
   try {
     if (!plainKey) return '';
     if (safeStorage.isEncryptionAvailable()) {
-      // Szyfrujemy i zamieniamy na format HEX (czytelny w JSON)
       return safeStorage.encryptString(plainKey).toString('hex');
     }
-    return plainKey; // Fallback (rzadko)
+    return plainKey;
   } catch (e) {
     console.error('Błąd szyfrowania:', e);
     return '';
@@ -86,14 +173,11 @@ function decryptApiKey(encryptedHex: string): string {
   try {
     if (!encryptedHex) return '';
     if (safeStorage.isEncryptionAvailable()) {
-      // Zamieniamy HEX z powrotem na bufor i odszyfrowujemy
       const buffer = Buffer.from(encryptedHex, 'hex');
       return safeStorage.decryptString(buffer);
     }
     return encryptedHex;
   } catch (e) {
-    // Jeśli nie uda się odszyfrować (np. przeniesiono plik na inny komputer),
-    // zwracamy pusty string, żeby wymusić ponowne wpisanie klucza.
     console.warn('Nie udało się odszyfrować klucza (możliwa zmiana maszyny).');
     return '';
   }
@@ -107,7 +191,7 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  // 1. ODCZYT USTAWIEŃ (Z ODSZYFROWYWANIEM)
+  // ODCZYT USTAWIEŃ (Z ODSZYFROWYWANIEM)
   ipcMain.handle('get-settings', () => {
     try {
       if (!fs.existsSync(configPath)) return {}; 
@@ -115,7 +199,6 @@ app.whenReady().then(() => {
       const data = fs.readFileSync(configPath, 'utf-8');
       const settings = JSON.parse(data);
 
-      // Jeśli w pliku jest klucz, próbujemy go odszyfrować przed wysłaniem do frontendu
       if (settings.apiKey) {
         settings.apiKey = decryptApiKey(settings.apiKey);
       }
@@ -127,10 +210,9 @@ app.whenReady().then(() => {
     }
   });
 
-  // 2. ZAPIS USTAWIEŃ (Z SZYFROWANIEM)
+  // ZAPIS USTAWIEŃ (Z SZYFROWANIEM)
   ipcMain.handle('save-settings', async (_event, newSettings) => {
     try {
-      // Najpierw czytamy to, co już jest na dysku
       let currentSettings: any = {};
       if (fs.existsSync(configPath)) {
         try {
@@ -138,19 +220,15 @@ app.whenReady().then(() => {
         } catch (e) {}
       }
 
-      // Jeśli przychodzi nowy klucz API (tekst jawny), musimy go zaszyfrować
       if (newSettings.apiKey) {
         newSettings.apiKey = encryptApiKey(newSettings.apiKey);
       }
 
-      // Scalamy stare z nowym (nadpisując tylko to, co się zmieniło)
       const finalSettings = { ...currentSettings, ...newSettings };
 
-      // Upewniamy się, że katalog istnieje
       const configDir = path.dirname(configPath);
       if (!fs.existsSync(configDir)) fs.mkdirSync(configDir, { recursive: true });
 
-      // Zapisujemy ładnego JSONa
       fs.writeFileSync(configPath, JSON.stringify(finalSettings, null, 2));
       return true;
     } catch (error) {
@@ -159,24 +237,156 @@ app.whenReady().then(() => {
     }
   });
 
-  // 3. WYBÓR FOLDERU
+  // WYBÓR FOLDERU
   ipcMain.handle('select-directory', async () => {
     const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
     if (result.canceled) return null;
     return result.filePaths[0];
   });
 
-  // 4. SKANOWANIE
+  // SKANOWANIE
   ipcMain.handle('read-dir', (_event, path) => getFileTree(path));
 
-  // 5. WATCHER
+  // WYBÓR WIELU DOKUMENTÓW (OKNO)
+  ipcMain.handle('select-documents', async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        { name: 'Dokumenty', extensions: ['pdf', 'docx', 'txt', 'jpg', 'png'] }
+      ]
+    });
+    if (result.canceled) return [];
+    return result.filePaths;
+  });
+
+// INTELIGENTNE SKANOWANIE (Pliki + Foldery -> Tylko Pliki)
+  ipcMain.handle('process-paths', (_event, filePaths: string[]) => {
+    const allFiles: string[] = [];
+
+    const scanRecursively = (currentPath: string) => {
+      try {
+        if (!currentPath) return;
+        
+        const stats = fs.statSync(currentPath);
+        if (stats.isFile()) {
+          if (!path.basename(currentPath).startsWith('.')) {
+            allFiles.push(currentPath);
+          }
+        } else if (stats.isDirectory()) {
+          const items = fs.readdirSync(currentPath);
+          items.forEach(item => {
+            if (!item.startsWith('.') && item !== 'node_modules') {
+              scanRecursively(path.join(currentPath, item));
+            }
+          });
+        }
+      } catch (e) {
+        console.warn(`[Main] Błąd dostępu do: ${currentPath}`, e);
+      }
+    };
+
+    filePaths.forEach(p => scanRecursively(p));
+    return allFiles;
+  });
+
+  // WATCHER
   ipcMain.handle('start-watching', (event, dirPath) => {
     if (fileWatcher) fileWatcher.close();
     fileWatcher = chokidar.watch(dirPath, { ignoreInitial: true, depth: 3 });
-    fileWatcher.on('all', () => {
+    fileWatcher.on('all', (eventName, filePath) => {
       BrowserWindow.getAllWindows().forEach(win => win.webContents.send('dir-changed'));
+
+      if (eventName === 'unlink') {
+        const meta = metadataManager.getFile(filePath);
+        if (meta) {
+          console.log(`[Sync] Wykryto usunięcie zindeksowanego pliku: ${filePath}`);
+          BrowserWindow.getAllWindows().forEach(win => win.webContents.send('file-missing', filePath));
+        }
+      } 
+      else if (eventName === 'add') {
+        const meta = metadataManager.getFile(filePath);
+        if (!meta) {
+          console.log(`[Sync] Wykryto nowy, niezindeksowany plik: ${filePath}`);
+          BrowserWindow.getAllWindows().forEach(win => 
+            win.webContents.send('new-file-detected', filePath)
+          );
+        }
+      }
     });
     return true;
+  });
+
+  // ANALIZA PLIKÓW
+  ipcMain.handle('analyze-files', async (_event, filePaths: string[]) => {
+    console.log(`[Main] Start analizy ${filePaths.length} plików. Limit wątków: ${CONCURRENCY_LIMIT}`);
+
+    let apiKey = '';
+    try {
+      if (fs.existsSync(configPath)) {
+        const settings = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+        if (settings.apiKey) apiKey = decryptApiKey(settings.apiKey);
+      }
+    } catch (e) { console.error(e); }
+
+    if (!apiKey) throw new Error('Brak klucza API!');
+
+    const analyzeSingleFile = async (filePath: string) => {
+      try {
+        const text = await parseFileContent(filePath);
+        if (!text) {
+          return { path: filePath, status: 'error', error: 'Brak tekstu / OCR' };
+        }
+
+        const aiData = await analyzeContentWithAI(text, apiKey);
+
+        if (aiData) {
+          // Normalizacja Kategorii
+          if (aiData.category) {
+            aiData.category = aiData.category
+              .replace(/\s*->\s*/g, '/')
+              .replace(/\\/g, '/');
+          }
+
+          // STRAŻNIK ROZSZERZEŃ (Naprawa problemu .docx -> .json)
+          const originalExt = path.extname(filePath); // np. .docx
+          let newName = aiData.suggestedName;
+
+          // Jeśli AI mimo zakazu dodało rozszerzenie, usuwamy je
+          if (path.extname(newName)) {
+              newName = path.parse(newName).name;
+          }
+
+          // Doklejamy ORYGINALNE rozszerzenie
+          aiData.suggestedName = `${newName}${originalExt}`;
+
+          return { path: filePath, status: 'success', data: aiData };
+        } else {
+          return { path: filePath, status: 'error', error: 'Błąd AI' };
+        }
+      } catch (err: any) {
+        return { path: filePath, status: 'error', error: err.message };
+      }
+    };
+
+    const results = await processWithConcurrency(filePaths, CONCURRENCY_LIMIT, analyzeSingleFile);
+    
+    console.log(`[Main] Zakończono analizę ${results.length} plików.`);
+    return results;
+  });
+  
+  // Zwraca listę niezindeksowanych plików w folderze roboczym
+  ipcMain.handle('check-folder-status', (_event, rootDir) => {
+     // Tutaj prosta logika:
+     // 1. Pobierz wszystkie pliki z dysku (getFileTree)
+     // 2. Pobierz wszystkie pliki z bazy (metadataManager)
+     // 3. Porównaj i zwróć różnice
+     // To zadanie dla Ciebie na później, na razie można zwrócić prosty raport z healthCheck
+     return metadataManager.performHealthCheck();
+  });
+
+  // Ręczne czyszczenie
+  ipcMain.handle('cleanup-metadata', () => {
+    return metadataManager.cleanUp();
   });
 
   createWindow()

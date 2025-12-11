@@ -8,37 +8,17 @@ import { Toaster, Toast } from './components/Toaster';
 import { HelpModal } from './components/HelpModal';
 import { HistoryModal } from './components/HistoryModal';
 
-function App(): JSX.Element {
+function App() {
   // --- Stan Globalny Aplikacji ---
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
-  const [apiKey, setApiKey] = useState('');
   const [files, setFiles] = useState<string[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
-  useEffect(() => {
-    const loadSettings = async () => {
-      // Używamy nowej metody getSettings
-      const settings = await window.api.getSettings();
-      if (settings?.apiKey) {
-        setApiKey(settings.apiKey);
-      }
-    };
-    loadSettings();
-  }, []);
-
-  const handleSaveKey = async () => {
-    // Używamy nowej metody saveSettings (scala z istniejącymi, więc nie usunie rootDir)
-    await window.api.saveSettings({ apiKey });
-    setIsSettingsOpen(false);
-  };
-
-  const addToast = (type: Toast['type'], title: string, message: string) => {
+  const addToast = (type: 'missing' | 'new' | 'success' | 'info', title: string, message: string) => {
     const id = Date.now();
     setToasts(prev => [...prev, { id, type, title, message }]);
-
-    // Auto-usuwanie po 5 sekundach
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== id));
     }, 5000);
@@ -76,10 +56,12 @@ function App(): JSX.Element {
           {/* Przekazujemy stan w dół do komponentów */}
           <Dropzone
             files={files} 
-            setFiles={setFiles} 
-            onAnalyze={() => console.log('Tu będzie start analizy')}
+            setFiles={setFiles}
           />
-          <AnalysisPanel files={files} />
+          <AnalysisPanel 
+             files={files} 
+             onShowToast={addToast}
+           />
         </div>
       </div>
 
@@ -88,9 +70,7 @@ function App(): JSX.Element {
       <SettingsModal 
         isOpen={isSettingsOpen} 
         onClose={() => setIsSettingsOpen(false)}
-        apiKey={apiKey}
-        setApiKey={setApiKey}
-        onSave={handleSaveKey}
+        onShowToast={addToast}
       />
 
       <HelpModal
@@ -100,7 +80,8 @@ function App(): JSX.Element {
 
       <HistoryModal 
         isOpen={isHistoryOpen} 
-        onClose={() => setIsHistoryOpen(false)} 
+        onClose={() => setIsHistoryOpen(false)}
+        onShowToast={addToast}
       />
     </div>
   );

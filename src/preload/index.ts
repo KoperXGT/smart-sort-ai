@@ -16,6 +16,9 @@ const api = {
 
   applyOrganization: (tasks: any[]) => ipcRenderer.invoke('apply-organization', tasks),
 
+  openFile: (path: string) => ipcRenderer.invoke('open-file', path),
+  showInFolder: (path: string) => ipcRenderer.invoke('show-in-folder', path),
+
   getHistory: () => ipcRenderer.invoke('get-history'),
   undoOperation: (id: string) => ipcRenderer.invoke('undo-operation', id),
   

@@ -3,9 +3,10 @@ import { AlertCircle, Cpu, Layers, Loader2, CheckCircle, ArrowRight, FolderEdit,
 
 interface AnalysisPanelProps {
   files: string[];
+  onShowToast: (type: 'success' | 'missing', title: string, message: string) => void;
 }
 
-export const AnalysisPanel = ({ files }: AnalysisPanelProps) => {
+export const AnalysisPanel = ({ files, onShowToast }: AnalysisPanelProps) => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isMoving, setIsMoving] = useState(false);
   const [results, setResults] = useState<any[]>([]);
@@ -35,6 +36,7 @@ export const AnalysisPanel = ({ files }: AnalysisPanelProps) => {
       setResults(data);
     } catch (error) {
       console.error("Błąd analizy:", error);
+      onShowToast('missing', 'Błąd AI', 'Sprawdź klucz API lub połączenie.');
     } finally {
       setIsAnalyzing(false);
     }
@@ -59,11 +61,14 @@ export const AnalysisPanel = ({ files }: AnalysisPanelProps) => {
 
     try {
       await window.api.applyOrganization(tasks);
+      
       setIsFinished(true);
       setResults([]); 
+      onShowToast('success', 'Sukces', `Przeniesiono pliki.`);
+      
     } catch (error) {
       console.error("Błąd przenoszenia:", error);
-      alert("Wystąpił błąd podczas przenoszenia plików.");
+      onShowToast('missing', 'Błąd przenoszenia', 'Nie udało się przenieść plików.');
     } finally {
       setIsMoving(false);
     }

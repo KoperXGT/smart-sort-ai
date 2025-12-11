@@ -1,5 +1,4 @@
-import { useEffect, useState } from 'react';
-import { X, AlertCircle, FilePlus, FileWarning } from 'lucide-react';
+import { X, FilePlus, FileWarning } from 'lucide-react';
 
 // Typ pojedynczego powiadomienia
 export interface Toast {

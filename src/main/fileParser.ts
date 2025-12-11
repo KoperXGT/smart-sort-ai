@@ -55,7 +55,14 @@ export const parseFileContent = async (filePath: string): Promise<string> => {
   const ext = path.extname(filePath).toLowerCase();
 
   // 1. Pliki tekstowe
-  if (['.txt', '.md', '.json', '.csv', '.xml', '.log', '.py', '.js', '.ts', '.html', '.css'].includes(ext)) {
+  const textExtensions = [
+      '.txt', '.md', '.json', '.csv', '.xml', '.log', '.env',
+      '.py', '.js', '.ts', '.tsx', '.jsx',
+      '.java', '.c', '.cpp', '.cs', '.h',
+      '.html', '.css', '.scss', '.sql', '.yaml', '.yml'
+  ];
+
+  if (textExtensions.includes(ext)) {
     return fs.readFileSync(filePath, 'utf-8');
   }
 

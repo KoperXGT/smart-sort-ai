@@ -4,9 +4,10 @@ import { X, History, RotateCcw, FileClock, ArrowRight } from 'lucide-react';
 interface HistoryModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onShowToast: (type: 'success' | 'missing', title: string, message: string) => void;
 }
 
-export const HistoryModal = ({ isOpen, onClose }: HistoryModalProps) => {
+export const HistoryModal = ({ isOpen, onClose, onShowToast }: HistoryModalProps) => {
   const [history, setHistory] = useState<any[]>([]);
   const [loadingId, setLoadingId] = useState<string | null>(null);
 
@@ -24,12 +25,14 @@ export const HistoryModal = ({ isOpen, onClose }: HistoryModalProps) => {
     try {
       const result = await window.api.undoOperation(id);
       if (result.success) {
-        await loadHistory(); // Odśwież listę
+        await loadHistory();
+        onShowToast('success', 'Cofnięto', 'Plik wrócił na swoje miejsce.');
       } else {
-        alert(`Błąd: ${result.message}`);
+        onShowToast('missing', 'Niepowodzenie', result.message || 'Błąd operacji.');
       }
     } catch (e) {
       console.error(e);
+      onShowToast('missing', 'Błąd krytyczny', 'Wystąpił błąd podczas cofania.');
     } finally {
       setLoadingId(null);
     }

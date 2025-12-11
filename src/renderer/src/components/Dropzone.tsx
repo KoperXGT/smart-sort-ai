@@ -1,13 +1,12 @@
-import { useState } from 'react';
-import { FileText, UploadCloud, X, File, FolderArchive } from 'lucide-react';
+import { useState, Dispatch, SetStateAction } from 'react';
+import { FileText, UploadCloud, X } from 'lucide-react';
 
 interface DropzoneProps {
   files: string[];
-  setFiles: (files: string[]) => void;
-  onAnalyze: () => void;
+  setFiles: Dispatch<SetStateAction<string[]>>;
 }
 
-export const Dropzone = ({ files, setFiles, onAnalyze }: DropzoneProps) => {
+export const Dropzone = ({ files, setFiles }: DropzoneProps) => {
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -23,7 +22,7 @@ export const Dropzone = ({ files, setFiles, onAnalyze }: DropzoneProps) => {
       if (flatFiles.length === 0) {
         console.warn('Backend nie zwrócił żadnych plików.');
       }
-      setFiles((prev) => Array.from(new Set([...prev, ...flatFiles])));
+      setFiles((prev: string[]) => Array.from(new Set([...prev, ...flatFiles])));
     } catch (error) {
       console.error("Błąd przetwarzania plików:", error);
     } finally {
@@ -40,7 +39,7 @@ export const Dropzone = ({ files, setFiles, onAnalyze }: DropzoneProps) => {
       const filesArray = Array.from(e.dataTransfer.files);
       const paths = filesArray.map((f: File) => window.api.getFilePath(f));
       
-      console.log('Frontend: Wykryte ścieżki:', paths); // Debug: Zobaczysz czy nie są puste
+      //console.log('Frontend: Wykryte ścieżki:', paths); // Debug: Zobaczysz czy nie są puste
 
       // Filtrujemy, żeby nie wysłać przypadkiem pustych stringów
       const validPaths = paths.filter(p => p && p.length > 0);

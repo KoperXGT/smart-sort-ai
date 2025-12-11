@@ -1,4 +1,4 @@
-import { app, safeStorage } from 'electron';
+import { app } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto'; // Do generowania hashy plików

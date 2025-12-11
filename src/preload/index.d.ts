@@ -5,8 +5,8 @@ declare global {
     electron: ElectronAPI
     api: {
       getFilePath: (file: File) => string;
-      getSettings: () => Promise<{ apiKey?: string; rootDir?: string } | null>;
-      saveSettings: (settings: { apiKey?: string; rootDir?: string }) => Promise<boolean>;
+      getSettings: () => Promise<{ apiKey?: string; rootDir?: string; customInstructions?: string } | null>;
+      saveSettings: (settings: { apiKey?: string; rootDir?: string; customInstructions?: string }) => Promise<boolean>;
       selectDirectory: () => Promise<string | null>;
       readDir: (path: string) => Promise<any>;
       startWatching: (path: string) => Promise<boolean>;
@@ -18,6 +18,8 @@ declare global {
       applyOrganization: (tasks: any[]) => Promise<{ success: boolean; results: any[] }>;
       getHistory: () => Promise<any[]>;
       undoOperation: (id: string) => Promise<{ success: boolean; message?: string }>;
+      openFile: (path: string) => Promise<void>;
+      showInFolder: (path: string) => Promise<void>;
     }
   }
 }

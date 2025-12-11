@@ -11,7 +11,7 @@ import OpenAI from 'openai';
 
 // --- ZMIENNE GLOBALNE ---
 const metadataManager = new MetadataManager();
-let fileWatcher: chokidar.FSWatcher | null = null;
+let fileWatcher: any = null;
 const configPath = path.join(app.getPath('userData'), 'config.json');
 
 // --- KONFIGURACJA LIMITÓW ---
@@ -49,6 +49,7 @@ function createWindow(): void {
     width: 1200,
     height: 800,
     show: false,
+    title: "SmartSort AI",
     autoHideMenuBar: true,
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
@@ -73,43 +74,46 @@ function createWindow(): void {
 }
 
 // --- FUNKCJA AI (NOWY, UNIWERSALNY PROMPT) ---
-async function analyzeContentWithAI(text: string, apiKey: string) {
+// Zaktualizowana funkcja AI
+async function analyzeContentWithAI(text: string, apiKey: string, customInstructions: string = '') {
   if (!text || text.trim().length < 10) return null;
 
   const openai = new OpenAI({ apiKey });
   const currentYear = new Date().getFullYear();
 
+  // Budowanie System Promptu z "wstrzyknięciem"
+  const systemPrompt = `Jesteś Ekspertem Archiwizacji Osobistej. 
+          
+          ZASADY KATEGORYZACJI:
+          1. Określ główny obszar (np. Finanse, Edukacja, Praca, Dom, Zdrowie).
+          2. Zaproponuj podfolder.
+          3. Używaj separatora "/" (slash).
+
+          ZASADY NAZEWNICTWA:
+          - Format: "Temat_Bez_Rozszerzenia".
+          - Dokumenty z datą -> "RRRR-MM-DD_Temat".
+          - Dokumenty bez daty -> "Temat".
+
+          ${customInstructions ? `
+          --- DODATKOWE INSTRUKCJE UŻYTKOWNIKA (WAŻNE!) ---
+          ${customInstructions}
+          --------------------------------------------------
+          ` : ''}
+
+          Zwróć JSON:
+          {
+            "summary": "Info",
+            "category": "Kategoria/Podkategoria",
+            "suggestedName": "Nazwa",
+            "metadata": { "type": "string", "tags": [], "attributes": {} }
+          }`;
+
   try {
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
-        {
-          role: "system",
-          content: `Jesteś Ekspertem Archiwizacji. Twoim zadaniem jest kategoryzacja plików.
-
-          ZASADY KATEGORYZACJI:
-          1. Separator folderów to "/". Przykład: "Praca/Projekty".
-          2. Kategorie mają być ogólne (np. Finanse, Dom, Praca, Edukacja, Hobby, Dokumenty).
-
-          ZASADY NAZEWNICTWA (BARDZO WAŻNE):
-          1. Sugerowana nazwa (suggestedName) ma zawierać TYLKO nazwę pliku, BEZ ROZSZERZENIA.
-             Źle: "Faktura.pdf"
-             Dobrze: "Faktura_Za_Paliwo"
-          2. Jeśli plik jest "ponadczasowy" (np. kod, e-book, instrukcja) -> NIE dodawaj daty na początku.
-          3. Jeśli plik jest dokumentem historycznym (faktura, pismo) -> dodaj datę "RRRR-MM-DD_Temat".
-
-          Zwróć JSON:
-          {
-            "summary": "Krótkie info",
-            "category": "Kategoria/Podkategoria",
-            "suggestedName": "Sama_Nazwa_Bez_Rozszerzenia",
-            "metadata": { "type": "string", "tags": [], "attributes": {} }
-          }`
-        },
-        {
-          role: "user",
-          content: `Rok: ${currentYear}. Treść:\n\n${text}`
-        }
+        { role: "system", content: systemPrompt },
+        { role: "user", content: `Rok: ${currentYear}. Treść:\n\n${text}` }
       ],
       response_format: { type: "json_object" }
     });
@@ -290,7 +294,7 @@ app.whenReady().then(() => {
   });
 
   // WATCHER
-  ipcMain.handle('start-watching', (event, dirPath) => {
+  ipcMain.handle('start-watching', (_event, dirPath) => {
     if (fileWatcher) fileWatcher.close();
     fileWatcher = chokidar.watch(dirPath, { ignoreInitial: true, depth: 3 });
     fileWatcher.on('all', (eventName, filePath) => {
@@ -299,14 +303,14 @@ app.whenReady().then(() => {
       if (eventName === 'unlink') {
         const meta = metadataManager.getFile(filePath);
         if (meta) {
-          console.log(`[Sync] Wykryto usunięcie zindeksowanego pliku: ${filePath}`);
+          //console.log(`[Sync] Wykryto usunięcie zindeksowanego pliku: ${filePath}`);
           BrowserWindow.getAllWindows().forEach(win => win.webContents.send('file-missing', filePath));
         }
       } 
       else if (eventName === 'add') {
         const meta = metadataManager.getFile(filePath);
         if (!meta) {
-          console.log(`[Sync] Wykryto nowy, niezindeksowany plik: ${filePath}`);
+          //console.log(`[Sync] Wykryto nowy, niezindeksowany plik: ${filePath}`);
           BrowserWindow.getAllWindows().forEach(win => 
             win.webContents.send('new-file-detected', filePath)
           );
@@ -318,7 +322,7 @@ app.whenReady().then(() => {
 
   // WYKONANIE ORGANIZACJI (PRZENOSZENIE PLIKÓW)
   ipcMain.handle('apply-organization', async (_event, tasks: any[]) => {
-    console.log(`[Main] Przenoszenie ${tasks.length} plików...`);
+    //console.log(`[Main] Przenoszenie ${tasks.length} plików...`);
     const results: any[] = [];
     
     // Pobieramy rootDir z ustawień
@@ -436,13 +440,15 @@ app.whenReady().then(() => {
 
   // ANALIZA PLIKÓW
   ipcMain.handle('analyze-files', async (_event, filePaths: string[]) => {
-    console.log(`[Main] Start analizy ${filePaths.length} plików. Limit wątków: ${CONCURRENCY_LIMIT}`);
+    //console.log(`[Main] Start analizy ${filePaths.length} plików. Limit wątków: ${CONCURRENCY_LIMIT}`);
 
     let apiKey = '';
+    let customInstructions = '';
     try {
       if (fs.existsSync(configPath)) {
         const settings = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
         if (settings.apiKey) apiKey = decryptApiKey(settings.apiKey);
+        if (settings.customInstructions) customInstructions = settings.customInstructions;
       }
     } catch (e) { console.error(e); }
 
@@ -455,7 +461,7 @@ app.whenReady().then(() => {
           return { path: filePath, status: 'error', error: 'Brak tekstu / OCR' };
         }
 
-        const aiData = await analyzeContentWithAI(text, apiKey);
+        const aiData = await analyzeContentWithAI(text, apiKey, customInstructions);
 
         if (aiData) {
           // Normalizacja Kategorii
@@ -488,12 +494,12 @@ app.whenReady().then(() => {
 
     const results = await processWithConcurrency(filePaths, CONCURRENCY_LIMIT, analyzeSingleFile);
     
-    console.log(`[Main] Zakończono analizę ${results.length} plików.`);
+    //console.log(`[Main] Zakończono analizę ${results.length} plików.`);
     return results;
   });
   
   // Zwraca listę niezindeksowanych plików w folderze roboczym
-  ipcMain.handle('check-folder-status', (_event, rootDir) => {
+  ipcMain.handle('check-folder-status', (_event, _rootDir) => {
      // Tutaj prosta logika:
      // 1. Pobierz wszystkie pliki z dysku (getFileTree)
      // 2. Pobierz wszystkie pliki z bazy (metadataManager)
@@ -505,6 +511,16 @@ app.whenReady().then(() => {
   // Ręczne czyszczenie
   ipcMain.handle('cleanup-metadata', () => {
     return metadataManager.cleanUp();
+  });
+
+  // OPERACJE SYSTEMOWE NA PLIKACH
+  
+  ipcMain.handle('open-file', (_event, path) => {
+    shell.openPath(path);
+  });
+
+  ipcMain.handle('show-in-folder', (_event, path) => {
+    shell.showItemInFolder(path);
   });
 
   createWindow()

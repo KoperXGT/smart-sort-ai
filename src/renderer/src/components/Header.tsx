@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { Cpu, MoreVertical, Settings } from 'lucide-react';
+import { Cpu, MoreVertical, Settings, HelpCircle, History } from 'lucide-react'; // Dodaj HelpCircle
 
 interface HeaderProps {
   onOpenSettings: () => void;
+  onOpenHelp: () => void;
+  onOpenHistory: () => void;
 }
 
-export const Header = ({ onOpenSettings }: HeaderProps) => {
+export const Header = ({ onOpenSettings, onOpenHelp, onOpenHistory }: HeaderProps) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   return (
@@ -19,6 +21,14 @@ export const Header = ({ onOpenSettings }: HeaderProps) => {
       
       <div className="relative">
         <button 
+          onClick={onOpenHistory}
+          className="p-2 mr-2 text-gray-400 hover:bg-gray-800 hover:text-orange-400 rounded-full transition-colors"
+          title="Historia Operacji"
+        >
+          <History className="w-5 h-5" />
+        </button>
+
+        <button 
           onClick={() => setIsMenuOpen(!isMenuOpen)}
           className={`p-2 rounded-full transition-colors ${isMenuOpen ? 'bg-gray-800 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}
         >
@@ -29,6 +39,18 @@ export const Header = ({ onOpenSettings }: HeaderProps) => {
           <>
             <div className="fixed inset-0 z-40" onClick={() => setIsMenuOpen(false)} />
             <div className="absolute right-0 mt-2 w-48 bg-gray-800 border border-gray-700 rounded-lg shadow-xl py-1 z-50 animate-in fade-in zoom-in-95 duration-100">
+              
+              {/* Przycisk Pomocy */}
+              <button 
+                onClick={() => { onOpenHelp(); setIsMenuOpen(false); }}
+                className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white flex items-center gap-2"
+              >
+                <HelpCircle className="w-4 h-4" /> Pomoc
+              </button>
+
+              <div className="h-px bg-gray-700 my-1 mx-2"></div>
+
+              {/* Przycisk Ustawień */}
               <button 
                 onClick={() => { onOpenSettings(); setIsMenuOpen(false); }}
                 className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white flex items-center gap-2"

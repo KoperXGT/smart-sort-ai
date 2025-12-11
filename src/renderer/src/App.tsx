@@ -5,13 +5,17 @@ import { Dropzone } from './components/Dropzone';
 import { AnalysisPanel } from './components/AnalysisPanel';
 import { SettingsModal } from './components/SettingsModal';
 import { Toaster, Toast } from './components/Toaster';
+import { HelpModal } from './components/HelpModal';
+import { HistoryModal } from './components/HistoryModal';
 
 function App(): JSX.Element {
   // --- Stan Globalny Aplikacji ---
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [apiKey, setApiKey] = useState('');
   const [files, setFiles] = useState<string[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -58,7 +62,11 @@ function App(): JSX.Element {
   return (
     <div className="h-screen w-full bg-gray-950 text-white flex flex-col font-sans overflow-hidden">
       
-      <Header onOpenSettings={() => setIsSettingsOpen(true)} />
+      <Header 
+        onOpenSettings={() => setIsSettingsOpen(true)} 
+        onOpenHelp={() => setIsHelpOpen(true)}
+        onOpenHistory={() => setIsHistoryOpen(true)} 
+      />
 
       <div className="flex flex-1 overflow-hidden">
         
@@ -83,6 +91,16 @@ function App(): JSX.Element {
         apiKey={apiKey}
         setApiKey={setApiKey}
         onSave={handleSaveKey}
+      />
+
+      <HelpModal
+        isOpen={isHelpOpen} 
+        onClose={() => setIsHelpOpen(false)} 
+      />
+
+      <HistoryModal 
+        isOpen={isHistoryOpen} 
+        onClose={() => setIsHistoryOpen(false)} 
       />
     </div>
   );

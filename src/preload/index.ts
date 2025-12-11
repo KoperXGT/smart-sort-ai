@@ -13,6 +13,11 @@ const api = {
   selectDirectory: () => ipcRenderer.invoke('select-directory'),
   readDir: (path: string) => ipcRenderer.invoke('read-dir', path),
   analyzeFiles: (paths: string[]) => ipcRenderer.invoke('analyze-files', paths),
+
+  applyOrganization: (tasks: any[]) => ipcRenderer.invoke('apply-organization', tasks),
+
+  getHistory: () => ipcRenderer.invoke('get-history'),
+  undoOperation: (id: string) => ipcRenderer.invoke('undo-operation', id),
   
   // Watcher
   startWatching: (path: string) => ipcRenderer.invoke('start-watching', path),

@@ -316,6 +316,124 @@ app.whenReady().then(() => {
     return true;
   });
 
+  // WYKONANIE ORGANIZACJI (PRZENOSZENIE PLIKÓW)
+  ipcMain.handle('apply-organization', async (_event, tasks: any[]) => {
+    console.log(`[Main] Przenoszenie ${tasks.length} plików...`);
+    const results: any[] = [];
+    
+    // Pobieramy rootDir z ustawień
+    let rootDir = '';
+    try {
+      if (fs.existsSync(configPath)) {
+        const settings = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+        rootDir = settings.rootDir;
+      }
+    } catch (e) { console.error(e); }
+
+    if (!rootDir) return { success: false, message: 'Brak katalogu roboczego w ustawieniach!' };
+
+    for (const task of tasks) {
+      // task to obiekt: { originalPath, category, suggestedName }
+      try {
+        if (!fs.existsSync(task.originalPath)) {
+          results.push({ path: task.originalPath, status: 'error', error: 'Plik źródłowy nie istnieje' });
+          continue;
+        }
+
+        // 1. Budujemy ścieżkę docelową
+        // rootDir + Kategoria (np. Finanse/Faktury)
+        const targetDir = path.join(rootDir, task.category);
+        
+        // 2. Tworzymy foldery (jeśli nie istnieją)
+        if (!fs.existsSync(targetDir)) {
+          fs.mkdirSync(targetDir, { recursive: true });
+        }
+
+        // 3. Obsługa duplikatów nazw
+        let finalName = task.suggestedName;
+        let targetPath = path.join(targetDir, finalName);
+        let counter = 1;
+
+        // Dopóki plik istnieje, dodajemy _1, _2 itd.
+        while (fs.existsSync(targetPath)) {
+          const ext = path.extname(task.suggestedName);
+          const name = path.basename(task.suggestedName, ext);
+          finalName = `${name}_${counter}${ext}`;
+          targetPath = path.join(targetDir, finalName);
+          counter++;
+        }
+
+        // 4. Przenoszenie (Rename)
+        fs.renameSync(task.originalPath, targetPath);
+        
+        // 5. Aktualizacja bazy metadanych (MetadataManager)
+        // Usuwamy stary wpis i dodajemy nowy
+        metadataManager.removeFile(task.originalPath);
+        metadataManager.addOrUpdateFile(targetPath, {
+          type: task.metadata.type,
+          tags: task.metadata.tags || [],
+          attributes: task.metadata.attributes || {}
+        });
+
+        metadataManager.addHistory({
+          fileName: path.basename(task.originalPath),
+          originalPath: task.originalPath,
+          newPath: targetPath
+        });
+
+        results.push({ path: task.originalPath, status: 'success', newPath: targetPath });
+
+      } catch (error: any) {
+        console.error(`Błąd przenoszenia ${task.originalPath}:`, error);
+        results.push({ path: task.originalPath, status: 'error', error: error.message });
+      }
+    }
+
+    return { success: true, results };
+  });
+
+  // HISTORIA I UNDO
+  
+  ipcMain.handle('get-history', () => {
+    return metadataManager.getHistory();
+  });
+
+  ipcMain.handle('undo-operation', async (_event, historyId: string) => {
+    const entry = metadataManager.getHistoryEntry(historyId);
+    if (!entry) return { success: false, message: 'Nie znaleziono wpisu w historii' };
+
+    try {
+      if (!fs.existsSync(entry.newPath)) {
+        return { success: false, message: 'Plik został już usunięty lub przeniesiony ręcznie.' };
+      }
+
+      if (fs.existsSync(entry.originalPath)) {
+        return { success: false, message: 'W starej lokalizacji istnieje już plik o tej nazwie.' };
+      }
+
+      fs.renameSync(entry.newPath, entry.originalPath);
+
+      const currentMeta = metadataManager.getFile(entry.newPath);
+      metadataManager.removeFile(entry.newPath);
+      
+      if (currentMeta) {
+        metadataManager.addOrUpdateFile(entry.originalPath, {
+            type: currentMeta.type,
+            tags: currentMeta.tags,
+            attributes: currentMeta.attributes
+        });
+      }
+
+      metadataManager.removeHistoryEntry(historyId);
+
+      return { success: true };
+
+    } catch (error: any) {
+      console.error('Błąd undo:', error);
+      return { success: false, message: error.message };
+    }
+  });
+
   // ANALIZA PLIKÓW
   ipcMain.handle('analyze-files', async (_event, filePaths: string[]) => {
     console.log(`[Main] Start analizy ${filePaths.length} plików. Limit wątków: ${CONCURRENCY_LIMIT}`);

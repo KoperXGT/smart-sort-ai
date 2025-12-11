@@ -15,6 +15,9 @@ declare global {
       selectDocuments: () => Promise<string[]>;
       processPaths: (paths: string[]) => Promise<string[]>;
       analyzeFiles: (paths: string[]) => Promise<any[]>;
+      applyOrganization: (tasks: any[]) => Promise<{ success: boolean; results: any[] }>;
+      getHistory: () => Promise<any[]>;
+      undoOperation: (id: string) => Promise<{ success: boolean; message?: string }>;
     }
   }
 }
